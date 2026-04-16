@@ -1,10 +1,16 @@
-name: 'Build and release the Unity Runtime'
+name: 'Build the Unity Runtime'
 
 on:
-  workflow_dispatch:
-  release:
+  push:
+    branches:
+      - main
+  pull_request:
     types:
-      - published
+      - opened
+      - reopened
+      - ready_for_review
+      - synchronize
+  workflow_dispatch:
 
 permissions:
   packages: write
@@ -16,14 +22,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: 'Checkout composite actions'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: |
+            .github
+
+      - name: 'Generate a token'
+        id: generate-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.CI_APP_ID }}
+          private-key: ${{ secrets.CI_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: 'Mask generated variable'
+        shell: bash
+        run: echo "::add-mask::${{ steps.generate-token.outputs.token }}"
+
       - name: 'Check out repository'
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           lfs: 'true'
           path: 'UnityRuntime'
+          token: '${{ steps.generate-token.outputs.token }}'
+          submodules: 'true'
 
       - name: 'Install Unity'
-        uses: buildalon/unity-setup@v2
+        uses: buildalon/unity-setup@ab626823a2d32033d5a7811169d0ce92e8010d38 # v2.3.0
         id: unity-setup
         with:
           unity-version: '2019.4.19f1'
@@ -32,7 +58,7 @@ jobs:
           cache-installation: 'true'
 
       - name: 'Activate Unity license'
-        uses: buildalon/activate-unity-license@v2
+        uses: buildalon/activate-unity-license@ed044477f266bebc3b0bc5270ac3b29782e76116 # v2.1.0
         with:
           license: 'personal'
           username: '${{ secrets.UNITY_CI_USERNAME }}'
@@ -40,15 +66,3 @@ jobs:
 
       - name: 'Build Unity Runtime'
         run: ${{ steps.unity-setup.outputs.unity-editor-path }} -quit -batchmode -nographics -projectPath UnityRuntime/ -buildTarget StandaloneWindows64 -executeMethod AppBuilder.BuildWindows
-
-      - name: 'zip artifacts'
-        if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
-        run: zip -r renderer.zip Builds/Windows/Renderer
-
-      - name: 'Upload artifacts to Release'
-        uses: AButler/upload-release-assets@v3.0
-        if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
-        with:
-          release-tag: '${{ github.ref_name }}'
-          files: 'renderer.zip'
-          repo-token: '${{ secrets.GITHUB_TOKEN }}'
