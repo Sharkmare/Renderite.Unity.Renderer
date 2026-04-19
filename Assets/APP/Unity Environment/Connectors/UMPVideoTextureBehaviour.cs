@@ -577,7 +577,9 @@ class AudioBufferHandler : IDisposable
 
     object _lock = new object();
 
-    bool _playing = true;
+    // UMP-019: volatile ensures the background thread sees Pause/Resume writes from the media-
+    // player callback thread without requiring a full lock acquisition.
+    volatile bool _playing = true;
 
     int _associatedAssetId;
 
@@ -665,9 +667,15 @@ class AudioBufferHandler : IDisposable
 
         while(!_cancellationSource.IsCancellationRequested)
         {
-            lock(_lock)
+            // UMP-019: check volatile _playing outside the lock — avoids Monitor.Enter/Exit
+            // entirely when the player is paused (the common idle state).
+            if (!_playing)
             {
-                if (_playing)
+                nextUpdate += 0.01f; // wait before resuming
+            }
+            else
+            {
+                lock(_lock)
                 {
                     var record = Dequeue();
 
@@ -687,8 +695,6 @@ class AudioBufferHandler : IDisposable
                         nextUpdate += record.delay;
                     }
                 }
-                else
-                    nextUpdate += 0.01f; // wait a bit before resuming
             }
 
             var timeToNextUpdate = nextUpdate - stopwatch.Elapsed.TotalSeconds;

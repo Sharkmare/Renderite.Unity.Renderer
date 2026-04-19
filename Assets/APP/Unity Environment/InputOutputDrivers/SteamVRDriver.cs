@@ -101,7 +101,8 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
 
     Dictionary<string, Tracker> trackers = new Dictionary<string, Tracker>();
 
-    Queue<Action> actionQueue = new Queue<Action>();
+    // STM-009: ConcurrentQueue eliminates Monitor.Enter/Exit overhead on the per-frame hot path.
+    System.Collections.Concurrent.ConcurrentQueue<Action> actionQueue = new System.Collections.Concurrent.ConcurrentQueue<Action>();
 
     readonly struct InvalidRoleDevice
     {
@@ -149,8 +150,7 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
 
     void TrackerConnected(int index, string serial, string deviceType)
     {
-        lock (actionQueue)
-            actionQueue.Enqueue(() =>
+        actionQueue.Enqueue(() =>
             {
                 if (trackers.TryGetValue(serial, out Tracker existingTracker))
                 {
@@ -856,11 +856,14 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
         if (headIndex >= 0)
             UpdateTrackedPose(headIndex, poses, head);
 
-        foreach (var reference in trackingReferences)
-            UpdateTrackedPose(reference.Key, poses, reference.Value.State);
+        // STM-011: skip GetEnumerator/MoveNext entirely when the collections are empty (common case).
+        if (trackingReferences.Count > 0)
+            foreach (var reference in trackingReferences)
+                UpdateTrackedPose(reference.Key, poses, reference.Value.State);
 
-        foreach (var tracker in trackers)
-            UpdateTrackedPose(tracker.Value.deviceIndex, poses, tracker.Value.tracker);
+        if (trackers.Count > 0)
+            foreach (var tracker in trackers)
+                UpdateTrackedPose(tracker.Value.deviceIndex, poses, tracker.Value.tracker);
     }
 
     void UpdateTrackedPose(int index, TrackedDevicePose_t[] poses, ITrackedDevice trackedObject)
@@ -1047,9 +1050,9 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
     {
         var vr = state.vr;
 
-        lock (actionQueue)
-            while (actionQueue.Count > 0)
-                actionQueue.Dequeue()();
+        // STM-009: TryDequeue on ConcurrentQueue — no lock needed on the main-thread hot path.
+        while (actionQueue.TryDequeue(out var action))
+            action();
 
         // SteamVR-005: throttle battery P/Invoke calls to 1 Hz.
         _batteryTimer += Time.deltaTime;
@@ -1151,10 +1154,15 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
             frequency += Mathf.Lerp(5f, 320f, point.vibration) * point.vibration;
             weightSum += point.vibration;
 
-            var painAmplitude = Mathf.Pow(Mathf.Abs(Mathf.Sin(painPhi)), 0.25f) * Mathf.Max(0, Mathf.Sign(Mathf.Sin(painPhi * 0.5f)));
+            // STM-007: cache Sin(painPhi) — used twice in this expression.
+            var sinPhi_s     = Mathf.Sin(painPhi);
+            var sinHalfPhi_s = Mathf.Sin(painPhi * 0.5f);
+            var painAmplitude = Mathf.Pow(Mathf.Abs(sinPhi_s), 0.25f) * Mathf.Max(0, Mathf.Sign(sinHalfPhi_s));
             var pulseAmplitude = painAmplitude;
-            painAmplitude *= Mathf.Pow(point.pain, 0.25f);
-            painAmplitude += UnityEngine.Random.value * Mathf.Pow(point.pain, 0.25f) * 0.2f;
+            // STM-008: Mathf.Pow(point.pain, 0.25f) was called twice consecutively — cache it.
+            var painPow_s = Mathf.Pow(point.pain, 0.25f);
+            painAmplitude *= painPow_s;
+            painAmplitude += UnityEngine.Random.value * painPow_s * 0.2f;
 
             intensity += painAmplitude * point.pain;
             frequency += Mathf.Lerp(60f + pulseAmplitude * 80f, 80f + pulseAmplitude * 120f, point.pain) * point.pain;
@@ -1162,14 +1170,18 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
 
             var normalizedTemp = Mathf.Abs(point.temperature / 100f);
 
-            hapticData.tempPhi += normalizedTemp * 4;
-            hapticData.tempPhi %= 20000;
+            // STM-010: skip Perlin and lerp when temperature contribution is zero.
+            if (normalizedTemp > 0f)
+            {
+                hapticData.tempPhi += normalizedTemp * 4;
+                hapticData.tempPhi %= 20000;
 
-            var tempAmplitude = normalizedTemp * Mathf.PerlinNoise(hapticData.tempPhi, 0f);
+                var tempAmplitude = normalizedTemp * Mathf.PerlinNoise(hapticData.tempPhi, 0f);
 
-            intensity += tempAmplitude * normalizedTemp;
-            frequency += Mathf.Lerp(5f, 200f, normalizedTemp) * normalizedTemp;
-            weightSum += normalizedTemp;
+                intensity += tempAmplitude * normalizedTemp;
+                frequency += Mathf.Lerp(5f, 200f, normalizedTemp) * normalizedTemp;
+                weightSum += normalizedTemp;
+            }
 
             if (Mathf.Approximately(intensity, 0))
                 return;

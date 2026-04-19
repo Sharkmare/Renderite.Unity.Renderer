@@ -29,6 +29,10 @@ public class OculusDriver : InputDriver, IDriverHeadDevice, IOutputDriver
 
     float painPhi = 0f;
 
+    // OCU-002: battery level changes at most once per minute — poll at 1 Hz, not 90 Hz.
+    const float BATTERY_POLL_INTERVAL = 1f;
+    float _batteryTimer = 0f;
+
     Transform localAvatar;
 
     Transform leftHandReference;
@@ -320,7 +324,9 @@ new Vector3(0,0,0),
             hand.wristPosition = _handState.RootPose.Position.FromFlippedZVector3f().ToRender();
             hand.wristRotation = _handState.RootPose.Orientation.FromFlippedZQuatf().ToRender();
 
-            for (int i = 0; i < _handState.BoneRotations.Length; i++)
+            // OCU-006: cache array length — avoids re-reading the Length field every iteration.
+            var boneCount = _handState.BoneRotations.Length;
+            for (int i = 0; i < boneCount; i++)
             {
                 var ovrBone = (OVRPlugin.BoneId)i;
                 var engineBone = ToEngine(ovrBone);
@@ -419,6 +425,16 @@ new Vector3(0,0,0),
 
     void UpdateHandFromAvatar(HandState hand, Transform handRoot, Transform[] fingerRoots)
     {
+        // OCU-021: ensure segment lists are sized once here instead of on every per-finger call.
+        if (hand.segmentPositions == null)
+            hand.segmentPositions = new List<RenderVector3>();
+        if (hand.segmentRotations == null)
+            hand.segmentRotations = new List<RenderQuaternion>();
+        while (hand.segmentPositions.Count < FingerHelper.FINGER_SEGMENT_COUNT)
+            hand.segmentPositions.Add(default);
+        while (hand.segmentRotations.Count < FingerHelper.FINGER_SEGMENT_COUNT)
+            hand.segmentRotations.Add(default);
+
         var wristPos = localAvatar.InverseTransformPoint(handRoot.position);
         var wristRot = localAvatar.InverseTransformRotation(handRoot.rotation);
 
@@ -433,17 +449,8 @@ new Vector3(0,0,0),
 
     void UpdateFingerFromAvatar(HandState hand, FingerType finger, Transform handRoot, Transform root)
     {
-        if (hand.segmentPositions == null)
-            hand.segmentPositions = new List<RenderVector3>();
-
-        if (hand.segmentRotations == null)
-            hand.segmentRotations = new List<RenderQuaternion>();
-
-        while (hand.segmentPositions.Count < FingerHelper.FINGER_SEGMENT_COUNT)
-            hand.segmentPositions.Add(default);
-
-        while (hand.segmentRotations.Count < FingerHelper.FINGER_SEGMENT_COUNT)
-            hand.segmentRotations.Add(default);
+        // OCU-021: segment list initialization moved to UpdateHandFromAvatar (called once per hand,
+        // not five times per hand). Lists are guaranteed non-null and full-size here.
 
         var _origRoot = root;
 
@@ -466,6 +473,9 @@ new Vector3(0,0,0),
         var _wristCompensation = isLeft ? _wristCompensationLeft : _wristCompensationRight;
         // Oculus-006: _wristCompensation is constant across the loop — invert once.
         var invWristCompensation = Quaternion.Inverse(_wristCompensation);
+        // OCU-005: handRoot.rotation is constant across all segments — invert once here instead
+        // of inside InverseTransformRotation (which recomputes Quaternion.Inverse every call).
+        var invHandRootRot = Quaternion.Inverse(handRoot.rotation);
 
         for (int i = 0; i < segments; i++)
         {
@@ -473,7 +483,7 @@ new Vector3(0,0,0),
             var index = bodyNode.FlatSegmentIndex();
 
             var pos = handRoot.InverseTransformPoint(root.position);
-            var rot = handRoot.InverseTransformRotation(root.rotation);
+            var rot = invHandRootRot * root.rotation;
 
             if (i == 0 && finger == FingerType.Pinky)
             {
@@ -550,6 +560,13 @@ new Vector3(0,0,0),
         if (remainingVibration >= 0f)
             remainingVibration -= deltaTime;
 
+        // OCU-001: early-exit when nothing to feel — mirrors STEAM-022 on the SteamVR path.
+        if (point.force == 0f && point.vibration == 0f && point.pain == 0f && point.temperature == 0f && remainingVibration <= 0f)
+        {
+            OVRInput.SetControllerVibration(0, 0, controller);
+            return;
+        }
+
         float intensity = 0f;
         float frequency = 0f;
         float weightSum = 0f;
@@ -564,10 +581,15 @@ new Vector3(0,0,0),
         frequency += Mathf.Lerp(5f, 320f, point.vibration) * point.vibration;
         weightSum += point.vibration;
 
-        var painAmplitude = Mathf.Pow(Mathf.Abs(Mathf.Sin(painPhi)), 0.25f) * Mathf.Max(0, Mathf.Sign(Mathf.Sin(painPhi * 0.5f)));
+        // OCU-003: cache Sin(painPhi) — used in two sub-expressions, so compute once.
+        var sinPhi     = Mathf.Sin(painPhi);
+        var sinHalfPhi = Mathf.Sin(painPhi * 0.5f);
+        var painAmplitude = Mathf.Pow(Mathf.Abs(sinPhi), 0.25f) * Mathf.Max(0, Mathf.Sign(sinHalfPhi));
         var pulseAmplitude = painAmplitude;
-        painAmplitude *= Mathf.Pow(point.pain, 0.25f);
-        painAmplitude += UnityEngine.Random.value * Mathf.Pow(point.pain, 0.25f) * 0.2f;
+        // OCU-004: Mathf.Pow(point.pain, 0.25f) was called twice — cache it.
+        var painPow = Mathf.Pow(point.pain, 0.25f);
+        painAmplitude *= painPow;
+        painAmplitude += UnityEngine.Random.value * painPow * 0.2f;
 
         intensity += painAmplitude * point.pain;
         frequency += Mathf.Lerp(60f + pulseAmplitude * 80f, 80f + pulseAmplitude * 120f, point.pain) * point.pain;
@@ -575,14 +597,18 @@ new Vector3(0,0,0),
 
         var normalizedTemp = Mathf.Abs(point.temperature / 100f);
 
-        hapticData.tempPhi += normalizedTemp * 4;
-        hapticData.tempPhi %= 20000;
+        // OCU-022: skip Perlin and lerp when temperature contribution is zero.
+        if (normalizedTemp > 0f)
+        {
+            hapticData.tempPhi += normalizedTemp * 4;
+            hapticData.tempPhi %= 20000;
 
-        var tempAmplitude = normalizedTemp * Mathf.PerlinNoise(hapticData.tempPhi, 0f);
+            var tempAmplitude = normalizedTemp * Mathf.PerlinNoise(hapticData.tempPhi, 0f);
 
-        intensity += tempAmplitude * normalizedTemp;
-        frequency += Mathf.Lerp(5f, 200f, normalizedTemp) * normalizedTemp;
-        weightSum += normalizedTemp;
+            intensity += tempAmplitude * normalizedTemp;
+            frequency += Mathf.Lerp(5f, 200f, normalizedTemp) * normalizedTemp;
+            weightSum += normalizedTemp;
+        }
 
         if (remainingVibration > 0f)
         {
@@ -724,8 +750,14 @@ new Vector3(0,0,0),
         // Start button
         leftTouch.start = OVRInput.Get(OVRInput.RawButton.Start);
 
-        leftTouch.batteryLevel = OVRInput.GetControllerBatteryPercentRemaining(OVRInput.Controller.LTouch) * 0.01f;
-        rightTouch.batteryLevel = OVRInput.GetControllerBatteryPercentRemaining(OVRInput.Controller.RTouch) * 0.01f;
+        // OCU-002: throttle battery P/Invoke to 1 Hz — same strategy as STEAM-023.
+        _batteryTimer += Time.deltaTime;
+        if (_batteryTimer >= BATTERY_POLL_INTERVAL)
+        {
+            _batteryTimer = 0f;
+            leftTouch.batteryLevel  = OVRInput.GetControllerBatteryPercentRemaining(OVRInput.Controller.LTouch)  * 0.01f;
+            rightTouch.batteryLevel = OVRInput.GetControllerBatteryPercentRemaining(OVRInput.Controller.RTouch) * 0.01f;
+        }
     }
 
     public void HandleOutputState(OutputState state)

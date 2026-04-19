@@ -62,11 +62,12 @@ public class Monitor
 
     public bool available
     {
-        get 
-        { 
-            return 
-                state == DuplicatorState.Ready || 
-                state == DuplicatorState.Running; 
+        get
+        {
+            // UDD-015: cache state — the property is a P/Invoke call each access.
+            // Two references here previously = two P/Invoke calls per availability check.
+            var s = state;
+            return s == DuplicatorState.Ready || s == DuplicatorState.Running;
         }
     }
 

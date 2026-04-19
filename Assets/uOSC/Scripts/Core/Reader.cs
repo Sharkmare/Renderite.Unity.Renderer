@@ -18,18 +18,22 @@ public static class Reader
 
     public static int ParseInt(byte[] buf, ref int pos)
     {
-        Array.Reverse(buf, pos, 4);
-        var value = BitConverter.ToInt32(buf, pos);
+        // OSC-012: BinaryPrimitives reads big-endian directly — does NOT mutate the input buffer
+        // (Array.Reverse was destructive, causing silent corruption if the buffer was reused).
+        var value = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(
+            new System.ReadOnlySpan<byte>(buf, pos, 4));
         pos += 4;
         return value;
     }
 
     public static float ParseFloat(byte[] buf, ref int pos)
     {
-        Array.Reverse(buf, pos, 4);
-        var value = BitConverter.ToSingle(buf, pos);
+        // OSC-013: read big-endian int bits then reinterpret as float — non-mutating and
+        // allocation-free. ReadSingleBigEndian is .NET 5+ only, so we use the uint path.
+        var bits = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(
+            new System.ReadOnlySpan<byte>(buf, pos, 4));
         pos += 4;
-        return value;
+        unsafe { return *(float*)&bits; }
     }
 
     public static byte[] ParseBlob(byte[] buf, ref int pos)
@@ -43,8 +47,9 @@ public static class Reader
 
     public static ulong ParseTimetag(byte[] buf, ref int pos)
     {
-        Array.Reverse(buf, pos, 8);
-        var value = BitConverter.ToUInt64(buf, pos);
+        // OSC-014: BinaryPrimitives reads big-endian UInt64 — non-mutating.
+        var value = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(
+            new System.ReadOnlySpan<byte>(buf, pos, 8));
         pos += 8;
         return value;
     }

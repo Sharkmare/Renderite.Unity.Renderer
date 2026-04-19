@@ -259,7 +259,9 @@ namespace uDesktopDuplication
         void CreateMonitors()
         {
             DestroyMonitors();
-            for (int i = 0; i < monitorCount; ++i)
+            // UDD-016: cache P/Invoke result — monitorCount calls Lib.GetMonitorCount() every access.
+            var count = Lib.GetMonitorCount();
+            for (int i = 0; i < count; ++i)
             {
                 monitors.Add(new Monitor(i));
             }
@@ -276,7 +278,9 @@ namespace uDesktopDuplication
 
         void ReinitializeMonitors()
         {
-            for (int i = 0; i < monitorCount; ++i)
+            // UDD-016: cache P/Invoke result before loop.
+            var count = Lib.GetMonitorCount();
+            for (int i = 0; i < count; ++i)
             {
                 if (i == monitors.Count)
                 {
@@ -291,7 +295,9 @@ namespace uDesktopDuplication
 
         void RecreateTextures()
         {
-            for (int i = 0; i < monitorCount; ++i)
+            // UDD-016: cache P/Invoke result before loop.
+            var count = Lib.GetMonitorCount();
+            for (int i = 0; i < count; ++i)
             {
                 monitors[i].CreateTextureIfNeeded();
             }

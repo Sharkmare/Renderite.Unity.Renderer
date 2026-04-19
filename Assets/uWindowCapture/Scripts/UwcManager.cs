@@ -174,6 +174,8 @@ public class UwcManager : MonoBehaviour
 
     void UpdateWindowInfo()
     {
+        // UWC-018: skip cursor P/Invoke when no windows are registered.
+        if (windows_.Count == 0) return;
         cursorWindowId_ = Lib.GetWindowIdUnderCursor();
     }
 
@@ -187,6 +189,10 @@ public class UwcManager : MonoBehaviour
     void UpdateMessages()
     {
         var messages = Lib.GetMessages();
+
+        // UWC-017: fast-path exit — Lib.GetMessages() allocates a managed array every call;
+        // skip all switch overhead on the common case where no messages arrived this frame.
+        if (messages.Length == 0) return;
 
         for (int i = 0; i < messages.Length; ++i) {
             var message = messages[i];

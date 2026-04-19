@@ -140,8 +140,9 @@ public class GestureProvider : MonoBehaviour {
       }
       return;
     }
-    if (engine is ViveHandTrackingEngine)
-      frames = (engine as ViveHandTrackingEngine).lastIndex;
+    // VHT-020: C# 7 pattern variable — single isinst + cast instead of two separate operations.
+    if (engine is ViveHandTrackingEngine vhte)
+      frames = vhte.lastIndex;
     else
       frames++;
   }
