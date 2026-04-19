@@ -19,7 +19,13 @@ public class Thread : uOSC.Thread
         isRunning_ = true;
         loopFunc_ = loopFunc;
 
+        // OSC-025: mark as background so this thread does not prevent process exit
+        // when Unity quits before OnDisable fires (crash / Environment.Exit).
+        // AboveNormal priority ensures OSC haptic/tracking data is not preempted
+        // by normal-priority work threads during heavy frame loads.
         thread_ = new System.Threading.Thread(ThreadLoop);
+        thread_.IsBackground = true;
+        thread_.Priority = System.Threading.ThreadPriority.AboveNormal;
         thread_.Start();
     }
 
