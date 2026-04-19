@@ -1,3 +1,5 @@
+![BAEL.Renderite](Assets/bael-sig.png)
+
 # What is this?
 This repository contains the Unity renderer for Resonite. Resonite is a free social VR sandbox platform, which allows for socialization and collaborative in-game building.
 
@@ -37,11 +39,11 @@ Making this repository open source has several goals:
     - Unity SDK is a completely separate project available here: https://github.com/Yellow-Dog-Man/Resonite.UnitySDK
 
 # Building
-Unity Version: Unity 2019.4f19
+Unity Version: Unity 6000.0.49f1
 
 1) Open the project in Unity
 2) Ensure `UMP_SUPPORTED` keyword is not defined if you don't have UniversalMediaPlayer in the repo
-3) Go Build -> Windows
+3) Go Build -> Windows (IL2CPP, x86_64)
 
 # Reporting bugs
 For reporting bugs, we recommend doing so on the main Resonite repo here: https://github.com/Yellow-Dog-Man/Resonite-Issues/issues
@@ -109,9 +111,7 @@ To give you some idea on what we'd be likely willing to accept, here are some th
     - If it needs FrooxEngine side changes, please ask first!
     - The HW should generally be one that fits into the existing system however and needs to exist specifically on renderer side for handling - otherwise it would need to go to FrooxEngine!
 - Compiling with IL2CPP
-    - I've tried before (I being Froox) and lost my sanity
-    - I'm not sure if this will actually help with performance
-    - If you wanna take a stab at this, feel free!
+    - This fork has been ported to Unity 6 with IL2CPP enabled
     - More info here: https://github.com/Yellow-Dog-Man/Resonite-Issues/issues/4752
 - OS X support
     - This repo alone isn't probably enough to do this yet
