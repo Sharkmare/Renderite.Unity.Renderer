@@ -65,6 +65,10 @@ public class EngineLoadProgress : EngineInitProgress
 
     void Awake()
     {
+        // BAEL build stamp. Fires on scene load and appears in Player.log before
+        // the IPC handshake. Grep for "BAEL-BUILD" to confirm patched DLL is live.
+        Debug.Log(MonoVersion.BAELBuild);
+
         ProgressBar.localScale = new Vector3(LoadProgress, 1, 1);
 
         originalScale = ProgressBarRoot.localScale;

@@ -1,0 +1,49 @@
+<!--
+  IL2CPP preserve list — BAEL Unity 6 build
+  Prevents IL2CPP strip from removing types accessed via reflection in Renderite.
+
+  All IPC boundary structs must survive for:
+    - Marshal.SizeOf<T>() / Marshal.OffsetOf<T>() in StructLayoutVerifier
+    - Shared memory P/Invoke bridge (shmbridge.dll.so)
+    - Any runtime type-check paths in the Renderite material update system
+-->
+<linker>
+
+  <!-- ── IPC boundary structs (shared memory protocol) ─────────────────── -->
+  <assembly fullname="Renderite.Shared">
+    <type fullname="Renderite.Shared.RenderVector2"               preserve="all"/>
+    <type fullname="Renderite.Shared.RenderVector3"               preserve="all"/>
+    <type fullname="Renderite.Shared.RenderVector4"               preserve="all"/>
+    <type fullname="Renderite.Shared.RenderQuaternion"            preserve="all"/>
+    <type fullname="Renderite.Shared.RenderMatrix4x4"             preserve="all"/>
+    <type fullname="Renderite.Shared.RenderVector2i"              preserve="all"/>
+    <type fullname="Renderite.Shared.RenderVector3i"              preserve="all"/>
+    <type fullname="Renderite.Shared.RenderIntRect"               preserve="all"/>
+    <type fullname="Renderite.Shared.RenderRect"                  preserve="all"/>
+    <type fullname="Renderite.Shared.RenderBoundingBox"           preserve="all"/>
+    <type fullname="Renderite.Shared.RenderTransform"             preserve="all"/>
+    <type fullname="Renderite.Shared.BoneWeight"                  preserve="all"/>
+    <type fullname="Renderite.Shared.BoneAssignment"              preserve="all"/>
+    <type fullname="Renderite.Shared.TrailOffset"                 preserve="all"/>
+    <type fullname="Renderite.Shared.TrailsRendererState"         preserve="all"/>
+    <type fullname="Renderite.Shared.BlendshapeBufferDescriptor"  preserve="all"/>
+    <type fullname="Renderite.Shared.VertexAttributeDescriptor"   preserve="all"/>
+  </assembly>
+
+  <!-- ── Renderite Unity shell (reflection-heavy material update system) ── -->
+  <assembly fullname="Assembly-CSharp" preserve="all"/>
+
+  <!-- ── Renderite core renderer logic ─────────────────────────────────── -->
+  <assembly fullname="Renderite.Unity" preserve="all"/>
+
+  <!-- ── Unity engine types used by Renderite.Unity pre-compiled binary ─── -->
+  <!-- NativeArrayUnsafeUtility: Unity managed linker corrupts the generic   -->
+  <!-- method metadata for SetAtomicSafetyHandle when stripping. preserve    -->
+  <!-- all keeps the original metadata intact for IL2CPP resolution.         -->
+  <assembly fullname="UnityEngine.CoreModule">
+    <type fullname="Unity.Collections.LowLevel.Unsafe.NativeArrayUnsafeUtility" preserve="all"/>
+    <type fullname="Unity.Collections.LowLevel.Unsafe.AtomicSafetyHandle"       preserve="all"/>
+    <type fullname="Unity.Collections.NativeArray`1"                             preserve="all"/>
+  </assembly>
+
+</linker>

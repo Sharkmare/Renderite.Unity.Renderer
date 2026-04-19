@@ -431,24 +431,42 @@ namespace B83.Win32
                 mainWindow = GetMainWindow(threadId, "UnityWndClass");
         }
 
+        // IL2CPP: lambdas passed to native delegates must be static [MonoPInvokeCallback]
+        // methods -- instance methods (including closures) cannot be marshaled.
+        // Use [ThreadStatic] fields to carry the captured state without a closure.
+        [System.ThreadStatic] private static IntPtr   s_enumWin;
+        [System.ThreadStatic] private static string   s_enumClassName;
+
+        [AOT.MonoPInvokeCallback(typeof(EnumThreadDelegate))]
+        private static bool GetMainWindowCallback(IntPtr W, IntPtr _)
+        {
+            if (Window.IsWindowVisible(W) &&
+                (s_enumWin == IntPtr.Zero ||
+                 (s_enumClassName != null && Window.GetClassName(W) == s_enumClassName)))
+                s_enumWin = W;
+            return true;
+        }
+
         public static IntPtr GetMainWindow(uint aThreadId, string aClassName = null)
         {
-            IntPtr win = IntPtr.Zero;
-            Window.EnumThreadWindows(aThreadId, (W, _) => {
-                if (Window.IsWindowVisible(W) && (win == null || (aClassName != null && Window.GetClassName(W) == aClassName)))
-                    win = W;
-                return true;
-            }, IntPtr.Zero);
-            return win;
+            s_enumWin       = IntPtr.Zero;
+            s_enumClassName = aClassName;
+            Window.EnumThreadWindows(aThreadId, GetMainWindowCallback, IntPtr.Zero);
+            return s_enumWin;
         }
 
         public void InstallHook()
         {
+#if !ENABLE_IL2CPP
+            // IL2CPP cannot marshal instance methods (Callback) to native delegates.
+            // The renderer runs as a subprocess -- window-level file drag-and-drop is
+            // not needed. Skip hook installation entirely on IL2CPP builds.
             var hModule = WinAPI.GetModuleHandle(null);
             m_Callback = Callback;
             m_Hook = WinAPI.SetWindowsHookEx(HookType.WH_GETMESSAGE, m_Callback, hModule, threadId);
             // Allow dragging of files onto the main window. generates the WM_DROPFILES message
             WinAPI.DragAcceptFiles(mainWindow, true);
+#endif
         }
         public void UninstallHook()
         {
