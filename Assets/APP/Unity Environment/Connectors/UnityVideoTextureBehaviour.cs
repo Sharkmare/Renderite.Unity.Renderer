@@ -367,7 +367,12 @@ public class UnityVideoTextureBehavior : MonoBehaviour, IVideoPlaybackInstance
                     }
                 }
 
-                Thread.Sleep(10);
+                // UMP-023: 10 ms post-read sleep was longer than the inter-frame interval at
+                // typical sample rates, causing the buffer to oscillate between the open (>=8
+                // frames, read) and closed (<8 frames, sleep 1 ms) states every cycle and
+                // producing audible stuttering. Match the low-buffer backoff so the thread idles
+                // uniformly without creating a 10 ms dead gap after every successful read.
+                Thread.Sleep(1);
             }
         }
         catch(Exception ex)
