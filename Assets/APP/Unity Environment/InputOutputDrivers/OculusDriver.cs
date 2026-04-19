@@ -281,6 +281,12 @@ new Vector3(0,0,0),
     //    }
     //}
 
+    // Oculus-026: precompute painPhi constants — Mathf.PI is a field, not a const literal.
+    static readonly float _painPhiRate  = Mathf.PI * 2f;
+    static readonly float _painPhiWrap  = Mathf.PI * 4f;
+    static readonly float _painLerpLow  = 80f  / 60f;
+    static readonly float _painLerpHigh = 140f / 60f;
+
     Quaternion _axisCompensation = Quaternion.AngleAxis(180, Vector3.up);
 
     Quaternion _fingerCompensationRight = Quaternion.LookRotation(new Vector3(1, 0, 0), new Vector3(0, 1, 0));
@@ -734,8 +740,9 @@ new Vector3(0,0,0),
 
         var dt = Time.deltaTime;
 
-        painPhi += Mathf.PI * 2 * dt * Mathf.Lerp(80f / 60f, 140f / 60f, maxPain);
-        painPhi %= Mathf.PI * 2 * 2;
+        // Oculus-026: use precomputed constants.
+        painPhi += _painPhiRate * dt * Mathf.Lerp(_painLerpLow, _painLerpHigh, maxPain);
+        painPhi %= _painPhiWrap;
 
         UpdateVibration(dt, leftData, OVRInput.Controller.LTouch, ref _leftHapticData, ref leftVibrateRemaining, leftIntensity);
         UpdateVibration(dt, rightData, OVRInput.Controller.RTouch, ref _rightHapticData, ref rightVibrateRemaining, rightIntensity);

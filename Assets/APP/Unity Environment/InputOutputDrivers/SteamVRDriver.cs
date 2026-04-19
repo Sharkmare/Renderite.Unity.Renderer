@@ -118,6 +118,8 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
     List<InvalidRoleDevice> invalidRoleControllers = new List<InvalidRoleDevice>();
 
     Quaternion _touchRotationOffset = Quaternion.Euler(45, 0, 0);
+    // STEAM-024: inverse is constant — cache at field init instead of computing every frame.
+    readonly Quaternion _invTouchRotationOffset = Quaternion.Inverse(Quaternion.Euler(45, 0, 0));
     Vector3 _leftTouchOffset = new Vector3(-0.01f, 0.04f, 0.03f);
     Vector3 _rightTouchOffset = new Vector3(0.01f, 0.04f, 0.03f);
 
@@ -982,9 +984,8 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
             else if (name.Contains("rift"))
                 Device = HeadOutputDevice.Oculus;
 
-            var _lower = name.ToLower();
-
-            if (_lower.Contains("aapvr") || _lower.Contains("alvr") || _lower.Contains("ivry"))
+            // STEAM-025: name is already lowercased above — _lower was a redundant allocation.
+            if (name.Contains("aapvr") || name.Contains("alvr") || name.Contains("ivry"))
                 DisableSkeletalModel = true;
         }
 
@@ -1002,8 +1003,9 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
 
         if (!DisableSkeletalModel)
         {
+            // STEAM-027: OrdinalIgnoreCase avoids one ToLower string allocation per arg.
             foreach (var arg in System.Environment.GetCommandLineArgs())
-                if (arg.ToLower().EndsWith("legacysteamvrinput"))
+                if (arg.EndsWith("legacysteamvrinput", StringComparison.OrdinalIgnoreCase))
                 {
                     DisableSkeletalModel = true;
                     break;
@@ -1073,9 +1075,9 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
         }
 
         if (LeftData?.Controller != null)
-            UpdateController(LeftData.Controller, SteamVR_Input_Sources.LeftHand);
+            UpdateController(LeftData.Controller, SteamVR_Input_Sources.LeftHand, pollBattery);
         if (RightData?.Controller != null)
-            UpdateController(RightData.Controller, SteamVR_Input_Sources.RightHand);
+            UpdateController(RightData.Controller, SteamVR_Input_Sources.RightHand, pollBattery);
 
         if (pollBattery)
         {
@@ -1106,8 +1108,9 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
 
         var dt = Time.deltaTime;
 
-        painPhi += Mathf.PI * 2 * dt * Mathf.Lerp(80f / 60f, 140f / 60f, maxPain);
-        painPhi %= Mathf.PI * 2 * 2;
+        // STEAM-026: use precomputed constants instead of runtime-evaluated expressions.
+        painPhi += _painPhiRate * dt * Mathf.Lerp(_painLerpLow, _painLerpHigh, maxPain);
+        painPhi %= _painPhiWrap;
 
         if (LeftData != null)
         {
@@ -1195,7 +1198,8 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
         }
     }
 
-    void UpdateController(VR_ControllerState controller, SteamVR_Input_Sources source)
+    // STEAM-023: pollBattery throttles controller P/Invoke to 1 Hz (matches SteamVR-005 for HMD).
+    void UpdateController(VR_ControllerState controller, SteamVR_Input_Sources source, bool pollBattery)
     {
         HandState fingerHand;
 
@@ -1264,10 +1268,10 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
                 break;
         }
 
-        if (controller.isTracking)
+        // STEAM-023: guard battery P/Invoke behind the 1 Hz throttle flag.
+        if (controller.isTracking && pollBattery)
         {
             var index = SteamVR_Actions.Generic.Pose.GetDeviceIndex(source);
-
             controller.batteryLevel = GetBatteryLevel(index);
             controller.batteryCharging = GetIsCharging(index);
         }
@@ -1463,6 +1467,13 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
             UpdateHand(hand, controller, (hand.chirality == Chirality.Left) ? generic.LeftHand : generic.RightHand);
     }
 
+    // STEAM-026: precompute painPhi constants — Mathf.PI is a field, not a const literal,
+    // so the compiler cannot fold these; computing them per-frame wastes cycles.
+    static readonly float _painPhiRate  = Mathf.PI * 2f;          // 2π rad/cycle
+    static readonly float _painPhiWrap  = Mathf.PI * 4f;          // wrap at 2 full cycles
+    static readonly float _painLerpLow  = 80f  / 60f;             // ≈ 1.333 Hz
+    static readonly float _painLerpHigh = 140f / 60f;             // ≈ 2.333 Hz
+
     Quaternion _axisCompensation = Quaternion.AngleAxis(180, Vector3.up);
 
     Quaternion _fingerCompensationRight = Quaternion.LookRotation(new Vector3(1, 0, 0), new Vector3(0, 1, 0));
@@ -1495,7 +1506,8 @@ public class SteamVRDriver : InputDriver, IDriverHeadDevice, IOutputDriver
         {
             var positionOffset = controllerRot * (hand.chirality == Chirality.Left ? _leftTouchOffset : _rightTouchOffset);
 
-            controllerRot = controllerRot * Quaternion.Inverse(_touchRotationOffset);
+            // STEAM-024: use cached inverse — same value every frame.
+            controllerRot = controllerRot * _invTouchRotationOffset;
             controllerPos += positionOffset;
         }
 

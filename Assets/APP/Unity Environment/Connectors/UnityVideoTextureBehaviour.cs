@@ -334,8 +334,13 @@ public class UnityVideoTextureBehavior : MonoBehaviour, IVideoPlaybackInstance
             {
                 var availableFrames = provider.availableSampleFrameCount;
 
+                // VID-004: busy-spin burned 100% of a CPU core while waiting for audio frames.
+                // Audio arrives at ~44 frames/ms; sleeping 1ms is more than sufficient resolution.
                 if (availableFrames < BUFFER_BUFFER)
+                {
+                    Thread.Sleep(1);
                     continue;
+                }
 
                 // IMPORTANT!!! For some reason, when the buffer is read all the way to 0, it will mess up the buffer and
                 // generate some bogus samples for some reason. So we always leave a little bit in, which prevents this from
