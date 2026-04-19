@@ -328,6 +328,10 @@ new Vector3(0,0,0),
 
                 hand.segmentRotations[index] = _handState.BoneRotations[i].FromFlippedZQuatf().ToRender();
             }
+
+            // Oculus-007: skeleton data was populated — signal callers so they don't
+            // immediately re-run UpdateHandFromAvatar on top of this update.
+            return true;
         }
         //else
         //    Debug.Log("NoHandState");
@@ -454,6 +458,8 @@ new Vector3(0,0,0),
 
         var _fingerCompensation = isLeft ? _fingerCompensationLeft : _fingerCompensationRight;
         var _wristCompensation = isLeft ? _wristCompensationLeft : _wristCompensationRight;
+        // Oculus-006: _wristCompensation is constant across the loop — invert once.
+        var invWristCompensation = Quaternion.Inverse(_wristCompensation);
 
         for (int i = 0; i < segments; i++)
         {
@@ -471,8 +477,8 @@ new Vector3(0,0,0),
             else
                 rot = rot * _fingerCompensation;
 
-            hand.segmentPositions[index] = (Quaternion.Inverse(_wristCompensation) * pos).ToRender();
-            hand.segmentRotations[index] = (Quaternion.Inverse(_wristCompensation) * rot).ToRender();
+            hand.segmentPositions[index] = (invWristCompensation * pos).ToRender();
+            hand.segmentRotations[index] = (invWristCompensation * rot).ToRender();
 
             ApplyOffset(hand, bodyNode, index, isLeft);
 

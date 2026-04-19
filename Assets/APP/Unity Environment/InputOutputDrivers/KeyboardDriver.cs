@@ -11,7 +11,8 @@ public class KeyboardDriver : KeyboardInput
 {
     StringBuilder typeDelta = new StringBuilder();
 
-    IReadOnlyList<Key> _keys;
+    // Keyboard-003: store as Key[] so foreach uses the concrete array enumerator (no boxing).
+    Key[] _keys;
 
     bool _lastKeyboardActive;
 
@@ -19,7 +20,11 @@ public class KeyboardDriver : KeyboardInput
     {
         UnityEngine.InputSystem.Keyboard.current.onTextInput += Current_onTextInput;
 
-        _keys = Enums.GetValues<Key>();
+        // Enums.GetValues returns IReadOnlyList — ToArray gives us a Key[] for zero-alloc iteration.
+        var keyList = Enums.GetValues<Key>();
+        _keys = new Key[keyList.Count];
+        for (int i = 0; i < keyList.Count; i++)
+            _keys[i] = keyList[i];
     }
 
     void Current_onTextInput(char obj)
@@ -182,6 +187,13 @@ public class KeyboardDriver : KeyboardInput
 
         state.heldKeys.Clear();
 
+        // Keyboard-001: in VR the physical keyboard is almost never touched.
+        // Skip the 100+ key iteration entirely when no key is down.
+        var keyboard = UnityEngine.InputSystem.Keyboard.current;
+        if (keyboard == null || !keyboard.anyKey.isPressed)
+            return;
+
+        // Keyboard-003: _keys is now Key[] — foreach uses concrete array enumerator, no boxing.
         foreach (var key in _keys)
             if (GetKeyState(key))
                 state.heldKeys.Add(key);

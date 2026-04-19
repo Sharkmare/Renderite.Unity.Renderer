@@ -30,9 +30,14 @@ public class EngineLoadProgress : EngineInitProgress
 
     public bool Done;
 
-    DateTime? _fadeoutInitiatedOn;
+    // LoadProgress-003: replaced DateTime.UtcNow (system call + struct arithmetic) with a plain float.
+    float _fadeoutInitiatedTime = -1f;
 
     RendererSplashScreenOverride _screenOverride;
+
+    // LoadProgress-001: cache shader property IDs — Unity hashes the string on every SetXxx call.
+    static readonly int _mainTexID   = Shader.PropertyToID("_MainTex");
+    static readonly int _tintColorID = Shader.PropertyToID("_TintColor");
 
     public float LoadProgress { get; private set; }
 
@@ -137,7 +142,7 @@ public class EngineLoadProgress : EngineInitProgress
 
             if (Done)
             {
-                if (_fadeoutInitiatedOn == null)
+                if (_fadeoutInitiatedTime < 0f)
                 {
                     VideoPlayer.clip = FadeOutVideo;
                     VideoPlayer.time = 0;
@@ -146,10 +151,11 @@ public class EngineLoadProgress : EngineInitProgress
 
                     VideoPlayer.Play();
 
-                    _fadeoutInitiatedOn = DateTime.UtcNow;
+                    // LoadProgress-003: Time.realtimeSinceStartup is a managed float read — no system call.
+                    _fadeoutInitiatedTime = Time.realtimeSinceStartup;
                 }
 
-                if (videoLerp >= 0.9999f || (DateTime.UtcNow - _fadeoutInitiatedOn.Value).TotalSeconds > 30)
+                if (videoLerp >= 0.9999f || (Time.realtimeSinceStartup - _fadeoutInitiatedTime) > 30f)
                 {
                     // cleanup
                     if (!Application.isEditor)
@@ -164,7 +170,7 @@ public class EngineLoadProgress : EngineInitProgress
 
             ProgressBarRoot.localScale = new Vector3(originalScale.x * videoLerp, originalScale.y, originalScale.z);
 
-            Material.SetTextureScale("_MainTex", new Vector2(LoadProgress * videoLerp, 1f));
+            Material.SetTextureScale(_mainTexID, new Vector2(LoadProgress * videoLerp, 1f));
         }
         else
         {
@@ -174,10 +180,10 @@ public class EngineLoadProgress : EngineInitProgress
                 return;
             }
 
-            Material.SetTextureScale("_MainTex", new Vector2(LoadProgress, 1f));
+            Material.SetTextureScale(_mainTexID, new Vector2(LoadProgress, 1f));
         }
 
-        Material.SetTextureOffset("_MainTex", new Vector2(Time.time, 0f));
+        Material.SetTextureOffset(_mainTexID, new Vector2(Time.time, 0f));
 
         var h = Time.time * 0.2f;
         var s = 0.15f;
@@ -187,7 +193,7 @@ public class EngineLoadProgress : EngineInitProgress
         var c = Color.HSVToRGB(h, s, v);
         c.a = a;
 
-        Material.SetColor("_TintColor", c);
+        Material.SetColor(_tintColorID, c);
     }
 
     public override void ApplySplashScreenOverride(RendererSplashScreenOverride splashScreen)
