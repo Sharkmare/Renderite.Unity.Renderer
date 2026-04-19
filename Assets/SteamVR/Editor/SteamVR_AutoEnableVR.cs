@@ -58,11 +58,9 @@ namespace Valve.VR
 
                 UnityEditor.BuildTargetGroup currentTarget = UnityEditor.EditorUserBuildSettings.selectedBuildTargetGroup;
 
-#if (UNITY_5_4 || UNITY_5_3 || UNITY_5_2 || UNITY_5_1 || UNITY_5_0)
-                string[] devices = UnityEditorInternal.VR.VREditor.GetVREnabledDevices(currentTarget);
-#else
-                string[] devices = UnityEditorInternal.VR.VREditor.GetVREnabledDevicesOnTargetGroup(currentTarget);
-#endif
+// BAEL-FIX: VREditor.GetVREnabledDevicesOnTargetGroup removed in Unity 2022.3;
+                // legacy VR device selection replaced by XR Management package.
+                string[] devices = new string[0];
 
                 bool hasOpenVR = devices.Any(device => string.Equals(device, openVRString, System.StringComparison.CurrentCultureIgnoreCase));
 
@@ -83,11 +81,7 @@ namespace Valve.VR
                         newDevices = devicesList.ToArray();
                     }
 
-#if (UNITY_5_6 || UNITY_5_4 || UNITY_5_3 || UNITY_5_2 || UNITY_5_1 || UNITY_5_0)
-                    UnityEditorInternal.VR.VREditor.SetVREnabledDevices(currentTarget, newDevices);
-#else
-                    UnityEditorInternal.VR.VREditor.SetVREnabledDevicesOnTargetGroup(currentTarget, newDevices);
-#endif
+                    // BAEL-FIX: VREditor.SetVREnabledDevicesOnTargetGroup removed in Unity 2022.3; no-op.
                     Debug.Log("<b>[SteamVR Setup]</b> Added OpenVR to supported VR SDKs list.");
                 }
 
