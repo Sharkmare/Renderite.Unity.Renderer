@@ -55,13 +55,13 @@ namespace ViveHandTracking.Sample {
         selected = candidate;
         if (selected != null) {
           selected.GetComponent<Rigidbody>().useGravity = false;
-          selected.GetComponent<Rigidbody>().drag = 5f;
+          selected.GetComponent<Rigidbody>().linearDamping = 5f;
           Anchor.SetParent(selected.transform.parent, true);
           selected.transform.SetParent(Anchor, true);
         }
       } else if (selected != null) {
         selected.GetComponent<Rigidbody>().useGravity = true;
-        selected.GetComponent<Rigidbody>().drag = 0.5f;
+        selected.GetComponent<Rigidbody>().linearDamping = 0.5f;
         selected.transform.SetParent(Anchor.parent, true);
         Anchor.SetParent(transform, true);
         selected = null;
